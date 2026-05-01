@@ -35,7 +35,7 @@ SWITCH_DESCRIPTIONS: tuple[SunsynkSwitchDescription, ...] = (
         name="System Timer",
         icon="mdi:timer-cog",
         entity_category=EntityCategory.CONFIG,
-        entity_registry_enabled_default=False,
+        entity_registry_enabled_default=True,
     ),
 )
 
@@ -48,12 +48,7 @@ async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback
     entities: list[SwitchEntity] = []
     for coordinator in coordinators.values():
         for description in SWITCH_DESCRIPTIONS:
-            if setting_update_supported(
-                coordinator.data.settings,
-                coordinator.inverter.serial,
-                description.setting_key,
-            ):
-                entities.append(SunsynkSettingsSwitch(coordinator, description))
+            entities.append(SunsynkSettingsSwitch(coordinator, description))
 
     async_add_entities(entities)
 
@@ -106,6 +101,19 @@ class SunsynkSettingsSwitch(
         if value is None:
             return None
         return value == 1
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return settings write diagnostics."""
+        return {
+            "setting_key": self.entity_description.setting_key,
+            "settings_readback": self.coordinator.data.settings_supported,
+            "write_payload_supported": setting_update_supported(
+                self.coordinator.data.settings,
+                self.coordinator.inverter.serial,
+                self.entity_description.setting_key,
+            ),
+        }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable the Sunsynk setting."""

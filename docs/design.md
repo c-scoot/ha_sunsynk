@@ -74,7 +74,7 @@ For each write:
 4. POST the payload to `/set`.
 5. Immediately read settings again.
 6. Update Home Assistant state only when readback confirms the requested value.
-7. Do not expose controls when required command fields are missing or the settings serial does not match the inverter.
+7. Keep controls unavailable when required command fields are missing or the settings serial does not match the inverter.
 
 Control-specific contracts:
 
@@ -82,7 +82,7 @@ Control-specific contracts:
 - `energyMode`: accepts `0` Priority Battery or `1` Priority Load.
 - `peakAndVallery`: accepts `0` disabled or `1` enabled.
 
-Unsupported models, partial readback, mismatched serials, failed posts, and unconfirmed writes fail closed. The branch does not attempt rollback because each exposed write changes only one field while preserving the current readback payload; manual recovery is through Sunsynk Connect or a later explicit restore service if real-device testing shows that is needed.
+The Home Assistant entities are created as visible configuration entities so users can discover the controls from the integration/device page. Unsupported models, partial readback, mismatched serials, failed posts, and unconfirmed writes fail closed by leaving the controls unavailable or raising a handled write error. The branch does not attempt rollback because each exposed write changes only one field while preserving the current readback payload; manual recovery is through Sunsynk Connect or a later explicit restore service if real-device testing shows that is needed.
 
 ## Showstopper Check
 

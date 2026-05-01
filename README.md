@@ -2,7 +2,7 @@
 
 Native Home Assistant custom integration for Sunsynk Cloud monitoring.
 
-This is an early foundation. It authenticates against Sunsynk Cloud, discovers inverters on the account, creates Home Assistant devices and sensors for the main solar, grid, load, inverter, and battery values, and exposes a small disabled-by-default set of carefully confirmed system-mode controls.
+This is an early foundation. It authenticates against Sunsynk Cloud, discovers inverters on the account, creates Home Assistant devices and sensors for the main solar, grid, load, inverter, and battery values, and exposes a small set of carefully confirmed system-mode controls.
 
 ## Current Features
 
@@ -17,7 +17,7 @@ This is an early foundation. It authenticates against Sunsynk Cloud, discovers i
   - inverter output and diagnostics
 - Disabled diagnostic sensors for API calls and settings readback.
 - Settings readback discovery for future safe write controls.
-- Disabled-by-default writable controls for:
+- Writable config controls for:
   - System Work Mode.
   - Energy Pattern.
   - System Timer enablement.
@@ -55,7 +55,7 @@ Battery power is the signed value returned by Sunsynk. Confirm the sign conventi
 
 ## Writable Controls
 
-Version 0.1.1 exposes only three writable controls, and they are disabled by default in the entity registry:
+Version 0.1.1 exposes only three writable config controls:
 
 - **System Work Mode** select, backed by `sysWorkMode`.
   - `0`: Selling First.
@@ -72,7 +72,7 @@ The integration does not adjust scheduler slot times, target SOC values, grid ch
 
 Each write performs a fresh settings read, builds the expected Sunsynk system-mode command payload from current readback, posts to `/api/v1/common/setting/{serial}/set`, then immediately reads settings again. Home Assistant state is updated only after readback confirms the requested value.
 
-Writable entities are created only when settings readback contains the full expected command payload and the readback serial matches the inverter serial. Sunsynk documents that settings changes require owner or manager rights on the plant.
+Writable entities are created for each inverter and appear as configuration entities. They remain unavailable unless settings readback contains the full expected command payload and the readback serial matches the inverter serial. Sunsynk documents that settings changes require owner or manager rights on the plant.
 
 The expected payload preserves these readback fields and changes only the requested control:
 

@@ -19,7 +19,7 @@ The implementation keeps Sunsynk payload quirks and command-payload construction
 
 Writes use `POST /api/v1/common/setting/{serial}/set` only after a fresh settings readback. The command payload preserves the expected system-mode field set and changes only the requested key.
 
-The new controls are disabled by default and created only when settings readback contains every required system-mode command field and the readback `sn` matches the inverter serial.
+The new controls are visible configuration entities for each inverter. They remain unavailable unless settings readback contains every required system-mode command field and the readback `sn` matches the inverter serial.
 
 Supported values are constrained to `sysWorkMode` 0/1/2, `energyMode` 0/1, and `peakAndVallery` 0/1. Unsupported models, partial readback, serial mismatch, failed writes, and unconfirmed post-write readback fail closed.
 
