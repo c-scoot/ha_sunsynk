@@ -38,6 +38,13 @@ When the user asks for a review, assessment, roadmap, or recommendations, treat 
 ## Repository Map
 
 - `README.md`: installation, setup, behavior, entity semantics, polling, and dashboard guidance.
+- `custom_components/sunsynk/`: Home Assistant integration package. Keep API access and payload normalization in `api.py`, refresh orchestration in `coordinator.py`, and HA entity behavior in platform files.
+- `docs/`: design notes, API research notes, and validation records for larger changes.
+- `tests/`: targeted tests for normalization, refresh decisions, and write-safety helpers.
+
+## External Research
+
+Use external integrations, forum posts, and API examples as evidence only. Keep project rules, entity names, and architecture decisions native to this repository. Record date-sensitive API assumptions in docs or commit notes rather than in this file.
 
 ## Sub-Agent Use
 
@@ -88,7 +95,7 @@ Validate to Test
 - Keep long-term statistics semantics correct. Daily counters, total counters, and instantaneous power values must not be blurred together.
 - Make write paths safe and predictable. Successful writes should refresh or invalidate related cached state promptly.
 - If a change requires a preparatory state mutation, make it rollback-safe or order operations so failed writes do not leave the inverter in a new mode.
-- If  payload ownership is ambiguous, fail safe. Prefer returning unavailable or raising a handled error over guessing which inverter a payload belongs to.
+- If payload ownership is ambiguous, fail safe. Prefer returning unavailable or raising a handled error over guessing which inverter a payload belongs to.
 - Preserve graceful behavior when Sunsynk omits fields, changes naming, or returns partial data.
 - Do not broaden scope with opportunistic refactors unless they directly reduce risk in the current task.
 - Treat Sunsynk as the source of truth for writable state where the API can safely and cheaply provide readback. If source-of-truth reads are unavailable, expensive, or unreliable, document the fallback hierarchy and expose uncertainty rather than pretending the state is authoritative.

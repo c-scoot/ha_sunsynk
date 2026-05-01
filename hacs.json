@@ -1,0 +1,6 @@
+{
+  "name": "Sunsynk Cloud",
+  "render_readme": true,
+  "domains": ["sensor", "select", "switch"],
+  "homeassistant": "2024.6.0"
+}
