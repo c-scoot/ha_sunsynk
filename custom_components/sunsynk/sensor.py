@@ -20,7 +20,6 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -28,6 +27,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import SunsynkSample
 from .const import DOMAIN
 from .coordinator import SunsynkDataUpdateCoordinator
+from .entity import build_device_info
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -432,22 +432,6 @@ class SunsynkSettingsReadbackSensor(
         }
 
 
-def build_device_info(coordinator: SunsynkDataUpdateCoordinator) -> DeviceInfo:
-    """Build the Home Assistant device record."""
-    inverter = coordinator.inverter
-    detail = coordinator.data.detail if coordinator.data else {}
-    version = detail.get("version") if isinstance(detail.get("version"), dict) else {}
-    sw_parts = [version.get(key) for key in ("masterVer", "softVer", "hmiVer") if version.get(key)]
-    return DeviceInfo(
-        identifiers={(DOMAIN, inverter.serial)},
-        manufacturer="Sunsynk",
-        name=inverter.name or f"Sunsynk {inverter.serial}",
-        model=inverter.model or detail.get("model") or detail.get("type"),
-        serial_number=inverter.serial,
-        sw_version=" / ".join(sw_parts) if sw_parts else None,
-    )
-
-
 def _dynamic_description(key: str, sample: SunsynkSample) -> SunsynkSensorDescription:
     """Build a description for a normalized value discovered at runtime."""
     kwargs: dict[str, Any] = {
@@ -506,6 +490,7 @@ def _known_writable_candidates(settings: dict[str, Any]) -> list[str]:
     candidates = {
         "sysWorkMode",
         "energyMode",
+        "peakAndVallery",
         "solarSell",
         "pvMaxLimit",
         "zeroExportPower",

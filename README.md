@@ -2,7 +2,7 @@
 
 Native Home Assistant custom integration for Sunsynk Cloud monitoring.
 
-This is an early read-only foundation. It authenticates against Sunsynk Cloud, discovers inverters on the account, and creates Home Assistant devices and sensors for the main solar, grid, load, inverter, and battery values.
+This is an early foundation. It authenticates against Sunsynk Cloud, discovers inverters on the account, creates Home Assistant devices and sensors for the main solar, grid, load, inverter, and battery values, and exposes a small disabled-by-default set of carefully confirmed system-mode controls.
 
 ## Current Features
 
@@ -17,6 +17,10 @@ This is an early read-only foundation. It authenticates against Sunsynk Cloud, d
   - inverter output and diagnostics
 - Disabled diagnostic sensors for API calls and settings readback.
 - Settings readback discovery for future safe write controls.
+- Disabled-by-default writable controls for:
+  - System Work Mode.
+  - Energy Pattern.
+  - System Timer enablement.
 
 ## Installation
 
@@ -49,19 +53,37 @@ Energy sensors use kilowatt-hours. Daily counters can reset at day rollover and 
 
 Battery power is the signed value returned by Sunsynk. Confirm the sign convention for your inverter before using it in automations.
 
-## Write Options
+## Writable Controls
 
-This first pass does not expose write services or writable controls.
+Version 0.1.1 exposes only three writable controls, and they are disabled by default in the entity registry:
 
-Research and settings readback show candidate write areas:
+- **System Work Mode** select, backed by `sysWorkMode`.
+  - `0`: Selling First.
+  - `1`: Zero-Export + Limited to Load.
+  - `2`: Limited to Home.
+- **Energy Pattern** select, backed by `energyMode`.
+  - `0`: Priority Battery.
+  - `1`: Priority Load.
+- **System Timer** switch, backed by `peakAndVallery`.
+  - `0`: disabled.
+  - `1`: enabled.
 
-- System work mode and export behavior.
-- Six time-of-use charge/discharge slots.
-- Grid and generator charge flags.
-- Target SOC/capacity per slot.
-- Battery reserve, shutdown, restart, and current limit values.
+The integration does not adjust scheduler slot times, target SOC values, grid charge flags, generator charge flags, export limits, or battery protection values in this release.
 
-Writes need real-account validation before they are safe to expose. Sunsynk documents that settings changes require owner or manager rights on the plant. The integration therefore starts with readback diagnostics and leaves write controls for a later, deliberately tested release.
+Each write performs a fresh settings read, builds the expected Sunsynk system-mode command payload from current readback, posts to `/api/v1/common/setting/{serial}/set`, then immediately reads settings again. Home Assistant state is updated only after readback confirms the requested value.
+
+Writable entities are created only when settings readback contains the full expected command payload and the readback serial matches the inverter serial. Sunsynk documents that settings changes require owner or manager rights on the plant.
+
+The expected payload preserves these readback fields and changes only the requested control:
+
+```text
+sn, safetyType, battMode, solarSell, pvMaxLimit, energyMode, peakAndVallery,
+sysWorkMode, sellTime1..sellTime6, sellTime1Pac..sellTime6Pac, cap1..cap6,
+sellTime1Volt..sellTime6Volt, zeroExportPower, solarMaxSellPower,
+mondayOn..sundayOn, time1on..time6on, genTime1on..genTime6on
+```
+
+If a write is rejected, not confirmed, or the account lacks permission, the entity call fails and the previous confirmed settings remain the source of truth.
 
 ## API Notes
 

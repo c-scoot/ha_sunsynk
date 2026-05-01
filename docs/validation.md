@@ -4,25 +4,28 @@ Last updated: 2026-05-01.
 
 ## Scope
 
-Initial native Sunsynk Cloud custom integration scaffold:
+0.1.1 Sunsynk Cloud writable system-mode controls:
 
-- Config flow and options flow.
-- Async Sunsynk Cloud client.
-- Per-inverter data coordinator.
-- Sensor platform.
-- README, design note, HACS metadata, and normalization tests.
+- `sysWorkMode` select.
+- `energyMode` select.
+- `peakAndVallery` switch.
+- Read-modify-write settings payload construction.
+- Immediate post-write settings readback confirmation.
+- README, design note, HACS metadata, manifest version, and payload tests.
 
 ## Validation
 
-The implementation keeps Sunsynk payload quirks in `api.py`, refresh cadence in `coordinator.py`, and Home Assistant entity behavior in `sensor.py`.
+The implementation keeps Sunsynk payload quirks and command-payload construction in `api.py`, refresh/write sequencing in `coordinator.py`, and Home Assistant entity behavior in `select.py` and `switch.py`.
 
-No inverter write endpoint, writable entity, or service is exposed. The only non-read Sunsynk request in the integration code is authentication to `/oauth/token/new`; settings access is readback-only through `/api/v1/common/setting/{serial}/read`.
+Writes use `POST /api/v1/common/setting/{serial}/set` only after a fresh settings readback. The command payload preserves the expected system-mode field set and changes only the requested key.
 
-Polling is constrained to a minimum of 60 seconds in both the config/options flow and runtime setup. Detail and settings readback are gated behind a six-hour slow refresh interval.
+The new controls are disabled by default and created only when settings readback contains every required system-mode command field and the readback `sn` matches the inverter serial.
 
-Partial realtime payloads are normalized defensively. Missing values become unavailable rather than guessed. Dynamic normalized samples discovered after the first refresh can add sensors without requiring a reload.
+Supported values are constrained to `sysWorkMode` 0/1/2, `energyMode` 0/1, and `peakAndVallery` 0/1. Unsupported models, partial readback, serial mismatch, failed writes, and unconfirmed post-write readback fail closed.
 
-## Peer Review Fixes
+Each successful write costs three settings calls: read current settings, post settings, read settings for confirmation. Normal polling cadence is unchanged and the post-write update does not force a full realtime refresh.
+
+## Previous Peer Review Fixes
 
 A peer review agent reported four issues, all addressed:
 
@@ -33,20 +36,24 @@ A peer review agent reported four issues, all addressed:
 
 ## Tests
 
-Commands run with the bundled workspace Python because `python` was not on PATH:
+Commands run with the bundled workspace Python:
 
 ```text
-C:\Users\craig\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m py_compile custom_components\sunsynk\__init__.py custom_components\sunsynk\api.py custom_components\sunsynk\coordinator.py custom_components\sunsynk\config_flow.py custom_components\sunsynk\sensor.py custom_components\sunsynk\const.py tests\test_api_normalization.py
+C:\Users\craig\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m py_compile custom_components\sunsynk\__init__.py custom_components\sunsynk\api.py custom_components\sunsynk\coordinator.py custom_components\sunsynk\config_flow.py custom_components\sunsynk\entity.py custom_components\sunsynk\select.py custom_components\sunsynk\sensor.py custom_components\sunsynk\switch.py custom_components\sunsynk\const.py tests\test_api_normalization.py
 C:\Users\craig\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest discover -s tests
 C:\Users\craig\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -c "import json, pathlib; [json.loads(pathlib.Path(p).read_text()) for p in ['custom_components/sunsynk/manifest.json','custom_components/sunsynk/strings.json','custom_components/sunsynk/translations/en.json','hacs.json']]; print('json-ok')"
+git diff --check
 ```
 
 Results:
 
 - Python syntax compile: passed.
-- Unit tests: passed, 2 tests.
+- Unit tests: passed, 7 tests.
 - JSON parsing: passed.
+- Whitespace diff check: passed.
 
 ## Remaining Runtime Assumptions
 
-Live Sunsynk account validation has not been run in this workspace. The sign convention for battery power should be confirmed against a real inverter before using it in automations. Settings write controls remain intentionally deferred until readback, permissions, unsupported-model behavior, and recovery paths are tested.
+Live Sunsynk account write validation has not been run in this workspace. The expected payload is based on current community implementation evidence and should be tested against an owner or manager Sunsynk account before enabling controls in production automations.
+
+The integration does not yet expose scheduler slot editing, export controls, battery protection controls, or a restore service. Manual recovery remains through Sunsynk Connect if the cloud accepts a write but later device behavior is unexpected.

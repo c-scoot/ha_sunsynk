@@ -10,7 +10,7 @@ import hashlib
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlparse
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,6 +32,14 @@ class SunsynkAuthenticationError(SunsynkApiError):
 
 class SunsynkCannotConnectError(SunsynkApiError):
     """Raised when Home Assistant cannot reach Sunsynk Cloud."""
+
+
+class SunsynkUnsupportedSettingError(SunsynkApiError):
+    """Raised when a settings payload cannot safely support a write."""
+
+
+class SunsynkSettingsWriteError(SunsynkApiError):
+    """Raised when a Sunsynk settings write is not confirmed by readback."""
 
 
 @dataclass(slots=True)
@@ -68,6 +76,69 @@ class SunsynkApiUsageStats:
     errors: int = 0
     last_called_at: datetime | None = None
     last_error_at: datetime | None = None
+
+
+SYSTEM_MODE_SETTING_FIELDS: tuple[str, ...] = (
+    "sn",
+    "safetyType",
+    "battMode",
+    "solarSell",
+    "pvMaxLimit",
+    "energyMode",
+    "peakAndVallery",
+    "sysWorkMode",
+    "sellTime1",
+    "sellTime2",
+    "sellTime3",
+    "sellTime4",
+    "sellTime5",
+    "sellTime6",
+    "sellTime1Pac",
+    "sellTime2Pac",
+    "sellTime3Pac",
+    "sellTime4Pac",
+    "sellTime5Pac",
+    "sellTime6Pac",
+    "cap1",
+    "cap2",
+    "cap3",
+    "cap4",
+    "cap5",
+    "cap6",
+    "sellTime1Volt",
+    "sellTime2Volt",
+    "sellTime3Volt",
+    "sellTime4Volt",
+    "sellTime5Volt",
+    "sellTime6Volt",
+    "zeroExportPower",
+    "solarMaxSellPower",
+    "mondayOn",
+    "tuesdayOn",
+    "wednesdayOn",
+    "thursdayOn",
+    "fridayOn",
+    "saturdayOn",
+    "sundayOn",
+    "time1on",
+    "time2on",
+    "time3on",
+    "time4on",
+    "time5on",
+    "time6on",
+    "genTime1on",
+    "genTime2on",
+    "genTime3on",
+    "genTime4on",
+    "genTime5on",
+    "genTime6on",
+)
+
+SUPPORTED_SETTING_VALUES: Mapping[str, frozenset[int]] = {
+    "sysWorkMode": frozenset({0, 1, 2}),
+    "energyMode": frozenset({0, 1}),
+    "peakAndVallery": frozenset({0, 1}),
+}
 
 
 class SunsynkApiClient:
@@ -230,6 +301,19 @@ class SunsynkApiClient:
     async def async_get_settings(self, serial: str) -> dict[str, Any]:
         """Return inverter settings readback data, if the account can access it."""
         return await self._async_get_data(f"/api/v1/common/setting/{serial}/read", serial)
+
+    async def async_set_settings(
+        self,
+        serial: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Write inverter settings using the Sunsynk system-mode payload."""
+        return await self._async_request(
+            "POST",
+            f"/api/v1/common/setting/{serial}/set",
+            payload=payload,
+            device_serial=serial,
+        )
 
     def get_daily_usage(self, serial: str) -> SunsynkApiUsageStats:
         """Return today's per-inverter API usage bucket."""
@@ -454,6 +538,74 @@ def normalize_key(key: str) -> str:
     return _CAMEL_CASE_PATTERN.sub("_", key).replace("-", "_").replace("__", "_").lower()
 
 
+def settings_command_supported(settings: Mapping[str, Any], serial: str) -> bool:
+    """Return whether readback has enough data to build a safe write payload."""
+    try:
+        _validate_settings_command_base(settings, serial)
+    except SunsynkUnsupportedSettingError:
+        return False
+    return True
+
+
+def setting_update_supported(
+    settings: Mapping[str, Any],
+    serial: str,
+    setting_key: str,
+) -> bool:
+    """Return whether a specific write key can be exposed for this inverter."""
+    return (
+        setting_key in SUPPORTED_SETTING_VALUES
+        and setting_key in settings
+        and settings_command_supported(settings, serial)
+    )
+
+
+def build_settings_command_payload(
+    settings: Mapping[str, Any],
+    serial: str,
+    updates: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the expected Sunsynk settings write body from readback plus updates."""
+    _validate_settings_command_base(settings, serial)
+    payload = {field: settings[field] for field in SYSTEM_MODE_SETTING_FIELDS}
+
+    for key, value in updates.items():
+        payload[key] = normalize_setting_update_value(key, value)
+
+    return payload
+
+
+def normalize_setting_update_value(setting_key: str, value: Any) -> int:
+    """Validate and normalize a supported writable setting value."""
+    allowed_values = SUPPORTED_SETTING_VALUES.get(setting_key)
+    if allowed_values is None:
+        raise SunsynkUnsupportedSettingError(
+            f"Sunsynk setting {setting_key} is not supported for writing"
+        )
+
+    normalized = _coerce_setting_int(value)
+    if normalized not in allowed_values:
+        allowed = ", ".join(str(item) for item in sorted(allowed_values))
+        raise SunsynkUnsupportedSettingError(
+            f"Sunsynk setting {setting_key} must be one of: {allowed}"
+        )
+    return normalized
+
+
+def setting_value_matches(
+    settings: Mapping[str, Any],
+    setting_key: str,
+    expected_value: Any,
+) -> bool:
+    """Return whether settings readback confirms the expected setting value."""
+    try:
+        current = normalize_setting_update_value(setting_key, settings.get(setting_key))
+        expected = normalize_setting_update_value(setting_key, expected_value)
+    except SunsynkUnsupportedSettingError:
+        return False
+    return current == expected
+
+
 def prettify_key(key: str) -> str:
     """Return a human-readable label for an API key."""
     return _CAMEL_CASE_PATTERN.sub(" ", key).replace("_", " ").replace("-", " ").title()
@@ -593,6 +745,51 @@ def coerce_value(value: Any) -> Any:
         except ValueError:
             return stripped
     return value
+
+
+def _validate_settings_command_base(settings: Mapping[str, Any], serial: str) -> None:
+    """Validate readback before using it as the base for a settings write."""
+    missing = [
+        field
+        for field in SYSTEM_MODE_SETTING_FIELDS
+        if field not in settings or settings[field] is None
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        raise SunsynkUnsupportedSettingError(
+            f"Sunsynk settings readback is missing required write fields: {joined}"
+        )
+
+    payload_serial = str(settings["sn"])
+    if payload_serial != serial:
+        raise SunsynkUnsupportedSettingError(
+            f"Sunsynk settings serial {payload_serial} does not match inverter {serial}"
+        )
+
+
+def _coerce_setting_int(value: Any) -> int:
+    """Coerce Sunsynk setting values that represent small integer enums."""
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("true", "on"):
+            return 1
+        if lowered in ("false", "off"):
+            return 0
+        try:
+            return int(lowered)
+        except ValueError as err:
+            raise SunsynkUnsupportedSettingError(
+                f"Sunsynk setting value {value!r} is not an integer"
+            ) from err
+    raise SunsynkUnsupportedSettingError(
+        f"Sunsynk setting value {value!r} is not supported"
+    )
 
 
 def _empty_to_none(value: Any) -> str | None:

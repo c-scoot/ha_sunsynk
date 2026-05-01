@@ -4,7 +4,7 @@ Last reviewed: 2026-05-01.
 
 ## Goal
 
-Build a native Home Assistant custom integration for Sunsynk Cloud that starts with dependable read-only monitoring and leaves a safe path toward writes once real-account readback and permissions are proven.
+Build a native Home Assistant custom integration for Sunsynk Cloud that starts with dependable monitoring and adds narrow, readback-confirmed writes only when the payload and permission model are understood.
 
 ## Current API Understanding
 
@@ -20,6 +20,10 @@ The first implementation uses these read endpoints:
 - `GET /api/v1/inverter/battery/{serial}/realtime`
 - `GET /api/v1/inverter/load/{serial}/realtime`
 - `GET /api/v1/common/setting/{serial}/read`
+
+Version 0.1.1 also uses:
+
+- `POST /api/v1/common/setting/{serial}/set`
 
 Normal polling uses the realtime endpoints. Inverter detail and settings readback are refreshed at most every six hours.
 
@@ -43,19 +47,42 @@ Payload normalization happens in `api.py`. Entity classes consume normalized sam
 
 ## Write Discovery
 
-The settings readback endpoint exposes candidate write keys. The most relevant groups discovered so far are:
+The settings readback endpoint exposes candidate write keys. Version 0.1.1 implements only these first controls:
 
-- System mode and export behavior: `sysWorkMode`, `energyMode`, `solarSell`, `pvMaxLimit`, `zeroExportPower`, `solarMaxSellPower`.
-- Six time-of-use slots: `time1on` through `time6on`, `sellTime1` through `sellTime6`, `cap1` through `cap6`, and the matching grid/gen charge flags.
-- Battery behavior: `batteryLowCap`, `batteryShutdownCap`, `batteryRestartCap`, `batteryMaxCurrentCharge`, `batteryMaxCurrentDischarge`.
+- `sysWorkMode`: Home Assistant select for system work mode.
+- `energyMode`: Home Assistant select for energy pattern.
+- `peakAndVallery`: Home Assistant switch for system timer enablement.
 
-No write service or writable entity is exposed in this pass. Before exposing writes, the project needs:
+Scheduler slot editing is deliberately out of scope for this release. Export controls and battery protection/current controls remain discovery-only candidates.
 
-- Readback confirmation after a write.
-- Owner or manager account permission confirmation.
-- Validation for unsupported inverter models.
-- A rollback or recovery plan for multi-field mode changes.
-- A manual recovery note in README.
+## 0.1.1 Write Design
+
+The expected system-mode command body is a read-modify-write payload, not a single-key patch. It preserves:
+
+```text
+sn, safetyType, battMode, solarSell, pvMaxLimit, energyMode, peakAndVallery,
+sysWorkMode, sellTime1..sellTime6, sellTime1Pac..sellTime6Pac, cap1..cap6,
+sellTime1Volt..sellTime6Volt, zeroExportPower, solarMaxSellPower,
+mondayOn..sundayOn, time1on..time6on, genTime1on..genTime6on
+```
+
+For each write:
+
+1. Read current settings from `/read`.
+2. Validate the requested value against the supported enum for the field.
+3. Build the full command payload from readback and override only the requested key.
+4. POST the payload to `/set`.
+5. Immediately read settings again.
+6. Update Home Assistant state only when readback confirms the requested value.
+7. Do not expose controls when required command fields are missing or the settings serial does not match the inverter.
+
+Control-specific contracts:
+
+- `sysWorkMode`: accepts `0` Selling First, `1` Zero-Export + Limited to Load, or `2` Limited to Home.
+- `energyMode`: accepts `0` Priority Battery or `1` Priority Load.
+- `peakAndVallery`: accepts `0` disabled or `1` enabled.
+
+Unsupported models, partial readback, mismatched serials, failed posts, and unconfirmed writes fail closed. The branch does not attempt rollback because each exposed write changes only one field while preserving the current readback payload; manual recovery is through Sunsynk Connect or a later explicit restore service if real-device testing shows that is needed.
 
 ## Showstopper Check
 

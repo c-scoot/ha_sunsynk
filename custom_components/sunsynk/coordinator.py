@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import logging
 from typing import Any
@@ -16,7 +16,11 @@ from .api import (
     SunsynkApiError,
     SunsynkInverter,
     SunsynkSample,
+    SunsynkSettingsWriteError,
+    build_settings_command_payload,
+    setting_value_matches,
     normalize_monitoring_payloads,
+    normalize_setting_update_value,
 )
 from .const import DOMAIN, SLOW_REFRESH_INTERVAL
 
@@ -56,6 +60,7 @@ class SunsynkDataUpdateCoordinator(DataUpdateCoordinator[SunsynkInverterData]):
         )
         self.api = api
         self.inverter = inverter
+        self._settings_write_lock = asyncio.Lock()
 
     async def _async_update_data(self) -> SunsynkInverterData:
         """Fetch the latest data from Sunsynk Cloud."""
@@ -131,6 +136,39 @@ class SunsynkDataUpdateCoordinator(DataUpdateCoordinator[SunsynkInverterData]):
             requested_at=now,
             detail_refreshed_at=detail_refreshed_at,
             settings_refreshed_at=settings_refreshed_at,
+        )
+
+    async def async_set_setting(self, setting_key: str, value: Any) -> None:
+        """Write one supported setting and confirm it by immediate readback."""
+        expected_value = normalize_setting_update_value(setting_key, value)
+
+        async with self._settings_write_lock:
+            settings = await self.api.async_get_settings(self.inverter.serial)
+            payload = build_settings_command_payload(
+                settings,
+                self.inverter.serial,
+                {setting_key: expected_value},
+            )
+            await self.api.async_set_settings(self.inverter.serial, payload)
+            confirmed = await self.api.async_get_settings(self.inverter.serial)
+
+            if not setting_value_matches(confirmed, setting_key, expected_value):
+                raise SunsynkSettingsWriteError(
+                    f"Sunsynk did not confirm {setting_key}={expected_value}"
+                )
+
+            self._update_settings_data(confirmed)
+
+    def _update_settings_data(self, settings: dict[str, Any]) -> None:
+        """Publish fresh settings without forcing a full realtime refresh."""
+        current = self.data or SunsynkInverterData(inverter=self.inverter)
+        self.async_set_updated_data(
+            replace(
+                current,
+                settings=settings,
+                settings_supported=True,
+                settings_refreshed_at=dt_util.now(),
+            )
         )
 
 
