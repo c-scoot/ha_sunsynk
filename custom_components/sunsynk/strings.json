@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Sunsynk Cloud",
+        "description": "Use the Sunsynk Connect account that can see your inverter.",
+        "data": {
+          "username": "Email address",
+          "password": "Password",
+          "api_base_url": "API base URL",
+          "scan_interval": "Polling interval in seconds"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Sunsynk Cloud.",
+      "invalid_auth": "Sunsynk rejected the credentials.",
+      "no_inverters": "No inverters were returned for this Sunsynk account.",
+      "unknown": "Unexpected Sunsynk response."
+    },
+    "abort": {
+      "already_configured": "This Sunsynk account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sunsynk Cloud options",
+        "data": {
+          "scan_interval": "Polling interval in seconds"
+        }
+      }
+    }
+  }
+}
